@@ -1,0 +1,64 @@
+# BUILDER #
+
+# pull official base image
+FROM python:3.6.0-alpine as builder
+
+# work directory
+WORKDIR /usr/src/backend
+
+# environment variables
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+# install psycopg2 dependencies
+RUN apk update \
+    && apk add postgresql-dev gcc python3-dev musl-dev
+
+# lint
+RUN pip install --upgrade pip
+COPY . /usr/src/backend/
+
+# install dependencies
+COPY ./requirements.txt .
+RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/backend/wheels -r requirements.txt
+
+# FINAL #
+# pull official base image
+FROM python:3.6.0-alpine
+
+# create directory for the app user
+RUN mkdir -p /home/backend
+
+# create the app user
+RUN addgroup -S backend && adduser -S backend -G backend
+
+# create the appropriate directories
+ENV HOME=/home/backend
+ENV APP_HOME=/home/backend/web
+RUN mkdir $APP_HOME
+RUN mkdir $APP_HOME/staticfiles
+RUN mkdir $APP_HOME/mediafiles
+WORKDIR $APP_HOME
+
+# install dependencies
+RUN apk update && apk add libpq
+COPY --from=builder /usr/src/backend/wheels /wheels
+COPY --from=builder /usr/src/backend/requirements.txt .
+RUN pip install --upgrade pip
+RUN pip install --no-cache /wheels/*
+
+
+# copy entrypoint-prod.sh
+# COPY ./entrypoint.prod.sh $APP_HOME
+
+# copy project
+COPY . $APP_HOME
+
+# chown all the files to the app user
+RUN chown -R backend:backend $APP_HOME
+
+# change to the app user
+USER backend
+
+# run entrypoint.prod.sh
+# ENTRYPOINT ["/home/app/web/entrypoint.prod.sh"]
